@@ -1,80 +1,115 @@
-<div align="center">
-  <img src="https://raw.githubusercontent.com/yourusername/RavenTube/main/assets/raven-logo.png" width="200" alt="RavenTube Logo">
-  <h1>📥 RavenTube</h1>
-  <h3>دانلودر قدرتمند یوتیوب با قابلیت جستجو، زیرنویس و کیفیت 4K</h3>
-  
-  [![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-RavenTube-blue)](https://github.com/features/actions)
-  [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-  [![Farsi](https://img.shields.io/badge/lang-Farsi-red)](README.fa.md)
-  
+<div dir="rtl">
+
+# 🐦‍⬛ RavenTube | ریون تیوب
+
+### دانلودر خودکار یوتیوب با قابلیت جستجو — کاملاً رایگان | Automated YouTube Downloader with Search — Completely Free
+
+[![GitHub Actions](https://img.shields.io/badge/GitHub%20Actions-RavenTube-blue)](https://github.com/features/actions)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
+---
+
+## ✨ امکانات | Features
+
+| فارسی | English |
+|-------|---------|
+| 🎬 دانلود با کیفیت 4K، 1080p، 720p، 480p | 📹 Download up to 4K quality |
+| 🎵 استخراج فقط صدا (MP3) | 🎵 Audio-only extraction (MP3) |
+| 🔍 جستجوی مستقیم در یوتیوب | 🔍 Direct YouTube search |
+| 📝 زیرنویس فارسی + انگلیسی | 📝 Persian + English subtitles |
+| 🔒 رمزگذاری فایل ZIP | 🔒 ZIP password protection |
+| ⚡ بدون نیاز به VPN | ⚡ No VPN required |
+| 📂 اسپلیت خودکار (بخش‌های ۹۵ مگابایتی) | 📂 Auto-split (95 MB parts) |
+| 🌙 کار در شب (اجرای خودکار) | 🌙 Runs 24/7 automatically |
+
+---
+
+## 🚀 چگونه استفاده کنیم؟ | How to Use
+
+### ۱. مخزن را Fork کنید | Fork the repository
+
+### ۲. به Actions بروید | Go to Actions tab
+
+### ۳. روی "Run workflow" کلیک کنید | Click "Run workflow"
+
+### ۴. اطلاعات را وارد کنید | Enter your data
+
+| فیلد | توضیح |
+|------|-------|
+| **video_urls** | لینک یوتیوب یا عبارت جستجو (مثال: `آموزش پایتون` یا `ytsearch5:music`) |
+| **quality** | کیفیت: `best` / `2160` / `1080` / `720` / `480` / `audio` |
+| **download_subtitles** | `true` یا `false` — دانلود زیرنویس |
+| **password** | رمز دلخواه برای ZIP (اختیاری) |
+
+### ۵. منتظر بمانید | Wait for completion
+
+فایل‌ها در پوشه `videos/` قرار می‌گیرند. هر ویدیو در پوشه جداگانه با تصویر و README مخصوص.
+
+Files appear in `videos/` folder. Each video in its own folder with thumbnail and README.
+
+---
+
+## 🔍 مثال‌های جستجو | Search Examples
+
+```bash
+# فارسی | Persian
+آموزش پایتون
+ytsearch5:بهترین آهنگ‌های جدید
+ytsearch3:آموزش وردپرس حرفه‌ای
+
+# انگلیسی | English
+ytsearch10:best coding tutorials 2024
+machine learning course
+ytsearch2:podcast AI
+
+# ترکیبی | Mixed
+https://youtu.be/abc123 ytsearch3:music
+```
+
+---
+
+📁 ساختار خروجی | Output Structure
+
+```
+videos/
+├── نام-ویدیو/
+│   ├── نام-ویدیو.mp4        (یا فایل‌های .z01, .z02 در صورت بزرگ بودن)
+│   ├── thumbnail.jpg
+│   ├── subtitle.zip          (اگر فعال شده باشد)
+│   └── README.md             (لینک دانلود مستقیم)
+└── README.md                 (فهرست همه ویدیوها)
+```
+
+فایل‌های بزرگتر از ۹۵ مگابایت به چند بخش تقسیم می‌شوند. همه بخش‌ها را دانلود کرده و فایل اصلی .zip را باز کنید.
+
+Files larger than 95 MB are split into multiple parts. Download all parts and open the main .zip file.
+
+---
+
+🛠️ ابزارهای کمکی | Helper Tools
+
+Workflow کاربرد
+cleaner.yml حذف تمام ویدیوها از مخزن
+history_cleaner.yml پاکسازی تاریخچه گیت و کاهش حجم مخزن
+
+---
+
+⚠️ توجه قانونی | Legal Notice
+
+· این ابزار فقط برای استفاده شخصی و آموزشی است | For personal and educational use only
+· مسئولیت استفاده از محتوای دانلودی بر عهده کاربر است | User is responsible for downloaded content
+· رعایت قوانین کپی رایت کشور خود الزامی است | Respect your country's copyright laws
+
+---
+
+📞 ارتباط | Contact
+
+· مستندات کامل | Full documentation
+· گزارش مشکل | Report issue
+· پیشنهادات | Suggestions
+
+---
+
+ساخته شده با ❤️ برای جامعه فارسی‌زبان | Built with ❤️ for Persian community
+
 </div>
-
----
-
-## 🧠 درباره RavenTube
-
-**RavenTube** یک ابزار خودکار مبتنی بر GitHub Actions است که به شما امکان دانلود ویدیوهای یوتیوب را بدون نیاز به سرور شخصی، VPN یا نرم‌افزار خاصی می‌دهد.
-
-### ✨ امکانات
-
-| ویژگی | توضیح |
-|-------|-------|
-| 🎬 **کیفیت‌های متنوع** | از ۴۸۰p تا 4K و حتی دانلود فقط صدا (MP3) |
-| 🔍 **جستجوی پیشرفته** | جستجوی ویدیو با کلمات کلیدی و دانلود خودکار نتایج |
-| 📝 **زیرنویس خودکار** | دانلود زیرنویس فارسی و انگلیسی (در صورت وجود) |
-| 🔒 **رمزگذاری فایل‌ها** | محافظت از ویدیوها با رمز عبور |
-| 🌐 **پروکسی WARP** | عبور از محدودیت‌های منطقه‌ای با Cloudflare WARP |
-| 📁 **تقسیم خودکار** | فایل‌های بزرگ به قطعات ۴۵ مگابایتی تقسیم می‌شوند |
-| 📄 **README خودکار** | برای هر ویدیو یک صفحه دانلود با توضیحات کامل ساخته می‌شود |
-
----
-
-## 🚀 شروع سریع
-
-### ۱. فورک مخزن
-روی دکمه **Fork** در بالای صفحه کلیک کنید.
-
-### ۲. فعالسازی GitHub Actions
-در مخزن خود، به تب **Actions** بروید و اجازه اجرای workflow را بدهید.
-
-### ۳. اجرای دانلودر
-- به تب **Actions** → **RavenTube Downloader** → **Run workflow** بروید
-- اطلاعات زیر را وارد کنید:
-
----
-
-## 📋 راهنمای ورودی‌ها
-
-### 🔗 لینک ویدیو یا عبارت جستجو
-
-| نوع ورودی | مثال | توضیح |
-|-----------|------|-------|
-| لینک مستقیم | `https://youtube.com/watch?v=abc123` | دانلود یک ویدیو خاص |
-| چند لینک | `https://youtu.be/abc https://youtube.com/watch?v=xyz` | دانلود چند ویدیو با فاصله |
-| جستجوی ساده | `آموزش پایتون` | دانلود ۳ نتیجه اول جستجو |
-| جستجوی تعداد مشخص | `ytsearch5:آهنگ جدید` | دانلود ۵ نتیجه اول |
-| جستجوی یک نتیجه | `ytsearch1:عکس متحرک خنده دار` | دانلود فقط اولین نتیجه |
-
-### 🎬 کیفیت و نوع
-
-| گزینه | توضیح |
-|-------|-------|
-| `best` | بهترین کیفیت موجود (تا 4K) |
-| `2160` | کیفیت 4K |
-| `1440` | کیفیت 2K |
-| `1080` | کیفیت Full HD |
-| `720` | کیفیت HD |
-| `480` | کیفیت SD |
-| `audio` | فقط دانلود صدا (MP3) |
-
-### 📝 زیرنویس
-تیک بزنید اگر زیرنویس فارسی و انگلیسی می‌خواهید (در صورت وجود).
-
-### 🔒 رمز عبور
-برای محافظت از فایل ZIP یک رمز وارد کنید. خالی بگذارید برای بدون رمز.
-
----
-
-## 🧪 مثال‌های کاربردی
-
-### مثال ۱: دانلود یک ویدیو با کیفیت ۱۰۸۰p و زیرنویس

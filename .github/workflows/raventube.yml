@@ -1,10 +1,10 @@
-name: RavenTube - YouTube Downloader with Search
+name: RavenTube
 
 on:
   workflow_dispatch:
     inputs:
       video_urls:
-        description: 'YouTube URL or search query (space separated)'
+        description: 'YouTube URL(s) or search query (space separated)'
         required: true
         type: string
       quality:
@@ -14,14 +14,12 @@ on:
         type: choice
         options:
           - best
-          - 2160
-          - 1440
           - 1080
           - 720
           - 480
           - audio
       download_subtitles:
-        description: 'Download subtitles (Persian + English)'
+        description: 'Download subtitles'
         required: false
         default: false
         type: boolean
@@ -33,398 +31,92 @@ on:
 
 jobs:
   download:
-    name: 'RavenTube Downloader'
+    name: Download YouTube Videos
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
       contents: write
 
     steps:
-      - name: Check inputs
+      - name: Check input
         run: |
           if [ -z "${{ github.event.inputs.video_urls }}" ]; then
-            echo "❌ No input provided!"
+            echo "No URL provided"
             exit 1
           fi
 
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Configure Git
+      - name: Setup Git
         run: |
-          git config --global http.postBuffer 524288000
-          git config --global http.maxRequestBuffer 100M
-          git config --global core.compression 0
-          git config user.name 'RavenTube'
-          git config user.email 'raventube@local'
+          git config user.name "RavenTube"
+          git config user.email "raventube@local"
 
-      - name: Start WARP proxy
-        run: |
-          docker network create warp-net || true
-          docker run -d \
-            --name warp \
-            --restart always \
-            --network warp-net \
-            -p 1080:1080 \
-            --cap-add NET_ADMIN \
-            --sysctl net.ipv6.conf.all.disable_ipv6=0 \
-            --sysctl net.ipv4.conf.all.src_valid_mark=1 \
-            -v warp-data:/var/lib/cloudflare-warp \
-            caomingjun/warp
-          sleep 15
-          for i in 1 2 3 4 5; do
-            curl -s --max-time 5 --socks5-hostname 127.0.0.1:1080 https://cloudflare.com/cdn-cgi/trace | grep -qE 'warp=(on|plus)' && break
-            sleep 5
-          done
-
-      - name: Install dependencies
+      - name: Install yt-dlp
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-pip ffmpeg zip p7zip-full curl jq bc unzip
-          curl -fsSL https://deno.land/install.sh | sh
-          export DENO_INSTALL="$HOME/.deno"
-          export PATH="$DENO_INSTALL/bin:$PATH"
-          echo "$DENO_INSTALL/bin" >> $GITHUB_PATH
+          sudo apt-get install -y python3-pip ffmpeg zip
           pip3 install --upgrade yt-dlp
 
-      - name: RavenTube - download videos
+      - name: Download videos
         env:
-          INPUT_URLS: ${{ github.event.inputs.video_urls }}
+          URLS: ${{ github.event.inputs.video_urls }}
           QUALITY: ${{ github.event.inputs.quality }}
-          ZIP_PASSWORD: ${{ github.event.inputs.password }}
-          DOWNLOAD_SUBS: ${{ github.event.inputs.download_subtitles }}
-          REPO_OWNER: ${{ github.repository_owner }}
-          REPO_NAME: ${{ github.event.repository.name }}
-          BRANCH: ${{ github.ref_name }}
+          PASSWORD: ${{ github.event.inputs.password }}
+          SUBS: ${{ github.event.inputs.download_subtitles }}
         run: |
-          # Split size: 95 MB (safe under GitHub's 100 MB limit)
-          SPLIT_MB=95
-          SPLIT_BYTES=$(( SPLIT_MB * 1024 * 1024 ))
-          BACKUP_DIR="/tmp/raventube_$$"
-          mkdir -p "$BACKUP_DIR" videos
-          > /tmp/video_info.txt
-
-          # Choose yt-dlp format based on quality
-          case "$QUALITY" in
-            audio) FORMAT="bestaudio/bestaudio*/best" ;;
-            best)  FORMAT="bestvideo+bestaudio/bestvideo*+bestaudio*/best" ;;
-            2160)  FORMAT="bestvideo[height<=2160]+bestaudio/bestvideo[height<=2160]*+bestaudio*/bestvideo+bestaudio/best" ;;
-            1440)  FORMAT="bestvideo[height<=1440]+bestaudio/bestvideo[height<=1440]*+bestaudio*/bestvideo+bestaudio/best" ;;
-            1080)  FORMAT="bestvideo[height<=1080]+bestaudio/bestvideo[height<=1080]*+bestaudio*/bestvideo+bestaudio/best" ;;
-            720)   FORMAT="bestvideo[height<=720]+bestaudio/bestvideo[height<=720]*+bestaudio*/bestvideo+bestaudio/best" ;;
-            480)   FORMAT="bestvideo[height<=480]+bestaudio/bestvideo[height<=480]*+bestaudio*/bestvideo+bestaudio/best" ;;
-            *)     FORMAT="bestvideo+bestaudio/bestvideo*+bestaudio*/best" ;;
-          esac
-
-          sanitize_name() {
-            echo "$1" | sed 's/ /-/g' | sed 's/　/-/g' | tr -s '-'
-          }
-
-          urlencode() {
-            python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$1"
-          }
-
-          get_unique_folder() {
-            local name="$1"
-            if [ ! -d "videos/$name" ] && [ ! -d "$BACKUP_DIR/$name" ]; then
-              echo "$name"
-              return
-            fi
-            echo "${name}_$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 6 | head -1)"
-          }
-
-          # Parse input: direct URL or search query
-          parse_input() {
-            local input="$1"
-            if [[ "$input" =~ ^(https?://)?(www\.)?(youtube\.com|youtu\.be)/ ]]; then
-              echo "$input"
-              return
-            fi
-            if [[ "$input" =~ ^ytsearch[0-9]*: ]]; then
-              echo "$input"
-              return
-            fi
-            echo "ytsearch1:$input"
-          }
-
-          download_video() {
-            local method="$1" url="$2" tmp="$3"
-            local flags="--merge-output-format mp4 --write-thumbnail --convert-thumbnails jpg --no-cache-dir --output ${tmp}/%(title)s.%(ext)s --no-part --no-playlist --retries 5 --fragment-retries 5 --concurrent-fragments 8 --progress"
-            if [ "$QUALITY" = "audio" ]; then
-              flags="--extract-audio --audio-format mp3 --audio-quality 0 --write-thumbnail --convert-thumbnails jpg --no-cache-dir --output ${tmp}/%(title)s.%(ext)s --no-part --no-playlist --retries 5 --fragment-retries 5 --concurrent-fragments 8 --progress"
-            fi
-            case $method in
-              1) yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" $flags --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:github "$url" ;;
-              2) yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" $flags --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:npm "$url" ;;
-              3) yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" $flags --extractor-args "youtube:player_client=web,mweb,android_vr" --js-runtimes deno --remote-components ejs:github "$url" ;;
-              4) yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" $flags --extractor-args "youtube:player_client=mweb" "$url" ;;
-              5) yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" $flags --extractor-args "youtube:player_client=android_vr" "$url" ;;
-              6) yt-dlp --format "$FORMAT" $flags --extractor-args "youtube:player_client=web" --js-runtimes deno --remote-components ejs:github "$url" ;;
-              7) yt-dlp --format "$FORMAT" $flags --extractor-args "youtube:player_client=mweb" "$url" ;;
-              8) yt-dlp --proxy "socks5://127.0.0.1:1080" --format "$FORMAT" $flags --extractor-args "youtube:player_client=android" "$url" ;;
-            esac
-          }
-
-          # Build final URL list (expand searches)
-          FINAL_URLS=()
-          for raw in $INPUT_URLS; do
-            parsed=$(parse_input "$raw")
-            if [[ "$parsed" =~ ^ytsearch ]]; then
-              echo "Searching: $raw"
-              ids=$(yt-dlp --flat-playlist --print "%(id)s" "$parsed" 2>/dev/null | head -10)
-              for id in $ids; do
-                FINAL_URLS+=("https://youtube.com/watch?v=$id")
-              done
-            else
-              FINAL_URLS+=("$parsed")
-            fi
-          done
-
-          total=${#FINAL_URLS[@]}
-          echo "Total videos to download: $total"
-
-          # Main download loop
-          idx=0
-          for url in "${FINAL_URLS[@]}"; do
-            idx=$((idx + 1))
-            echo "=========================================="
-            echo "[$idx/$total] $url"
-            echo "=========================================="
-            tmp_dir="tmp_${idx}"
-            mkdir -p "$tmp_dir"
-            success=false
-            for method in 1 2 3 4 5 6 7 8; do
-              if download_video $method "$url" "$tmp_dir"; then
-                success=true
-                break
-              fi
-              sleep 3
-            done
-            if [ "$success" = false ]; then
-              rm -rf "$tmp_dir"
-              continue
-            fi
-
-            find "$tmp_dir" -name "*.part" -delete
-            for file in "$tmp_dir"/*; do
-              [ -f "$file" ] || continue
-              [[ "$file" == *.jpg || "$file" == *.webp ]] && continue
-              size=$(stat -c%s "$file")
-              base=$(basename "$file")
-              name_noext=$(sanitize_name "${base%.*}")
-              ext="${base##*.}"
-              folder=$(get_unique_folder "$name_noext")
-              mkdir -p "$BACKUP_DIR/$folder"
-              thumb=$(ls "$tmp_dir"/*.jpg 2>/dev/null | head -1)
-              [ -n "$thumb" ] && cp "$thumb" "$BACKUP_DIR/$folder/thumbnail.jpg"
-              echo "$name_noext|$folder" >> /tmp/video_info.txt
-              enc_folder=$(urlencode "$folder")
-
-              if [ "$size" -gt "$SPLIT_BYTES" ]; then
-                # Split into 95 MB parts
-                base_zip="$BACKUP_DIR/$folder/$folder"
-                if [ -n "$ZIP_PASSWORD" ]; then
-                  7z a -tzip -v${SPLIT_MB}m -p"$ZIP_PASSWORD" -mx=0 "${base_zip}.zip" "$file"
-                else
-                  zip -0 -s ${SPLIT_MB}m "${base_zip}.zip" "$file"
-                fi
-                # Generate download links
-                links=""
-                num=0
-                for part in $(ls "$BACKUP_DIR/$folder/"*.zip "$BACKUP_DIR/$folder/"*.z[0-9]* 2>/dev/null | sort -V); do
-                  num=$((num+1))
-                  pname=$(basename "$part")
-                  penc=$(urlencode "$pname")
-                  link="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/videos/${enc_folder}/${penc}"
-                  links="${links}| ${num} | \`${pname}\` | [Download](${link}) |\n"
-                done
-                total_size=$(du -sb "$BACKUP_DIR/$folder" | cut -f1)
-                total_mb=$(echo "scale=2; $total_size / 1024 / 1024" | bc)
-                cat > "$BACKUP_DIR/$folder/README.md" << 'EOF'
-# NAME_NOEXT_PLACEHOLDER
-
-THUMB_PLACEHOLDER
-
-| Property | Value |
-|----------|-------|
-| **Quality** | QUALITY_PLACEHOLDER |
-| **Total Size** | TOTAL_MB_PLACEHOLDER MB (NUM_PLACEHOLDER parts) |
-| **Password** | PASSWORD_STATUS |
-
-## Download Links
-
-| # | File | Link |
-|---|------|------|
-LINKS_PLACEHOLDER
-
-## How to Extract
-
-Download all parts to the same folder, then open `FOLDER_PLACEHOLDER.zip`.
-
----
-*RavenTube - Free YouTube Downloader*
-EOF
-                # Replace placeholders
-                sed -i "s|NAME_NOEXT_PLACEHOLDER|${name_noext}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|QUALITY_PLACEHOLDER|${QUALITY}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|TOTAL_MB_PLACEHOLDER|${total_mb}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|NUM_PLACEHOLDER|${num}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|FOLDER_PLACEHOLDER|${folder}|g" "$BACKUP_DIR/$folder/README.md"
-                if [ -n "$ZIP_PASSWORD" ]; then
-                  sed -i "s|PASSWORD_STATUS|YES|g" "$BACKUP_DIR/$folder/README.md"
-                else
-                  sed -i "s|PASSWORD_STATUS|NO|g" "$BACKUP_DIR/$folder/README.md"
-                fi
-                if [ -f "$BACKUP_DIR/$folder/thumbnail.jpg" ]; then
-                  sed -i "s|THUMB_PLACEHOLDER|<div align=\"center\"><img src=\"thumbnail.jpg\" width=\"250\"/></div><br>|g" "$BACKUP_DIR/$folder/README.md"
-                else
-                  sed -i "s|THUMB_PLACEHOLDER||g" "$BACKUP_DIR/$folder/README.md"
-                fi
-                # Insert links (needs escaping)
-                printf "%s" "$links" > /tmp/links.txt
-                sed -i "/LINKS_PLACEHOLDER/ {
-                  r /tmp/links.txt
-                  d
-                }" "$BACKUP_DIR/$folder/README.md"
-              else
-                # Small file - single zip or direct copy
-                if [ -n "$ZIP_PASSWORD" ]; then
-                  zip -0 -P "$ZIP_PASSWORD" "$BACKUP_DIR/$folder/$folder.zip" "$file"
-                  filename="$folder.zip"
-                else
-                  cp "$file" "$BACKUP_DIR/$folder/$folder.$ext"
-                  filename="$folder.$ext"
-                fi
-                size_mb=$(echo "scale=2; $size / 1024 / 1024" | bc)
-                enc_file=$(urlencode "$filename")
-                link="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/${BRANCH}/videos/${enc_folder}/${enc_file}"
-                cat > "$BACKUP_DIR/$folder/README.md" << 'EOF'
-# NAME_NOEXT_PLACEHOLDER
-
-THUMB_PLACEHOLDER
-
-| Property | Value |
-|----------|-------|
-| **Quality** | QUALITY_PLACEHOLDER |
-| **Size** | SIZE_MB_PLACEHOLDER MB |
-| **Password** | PASSWORD_STATUS |
-
-## Download Link
-
-| File | Link |
-|------|------|
-| `FILENAME_PLACEHOLDER` | [Download](LINK_PLACEHOLDER) |
-
----
-*RavenTube - Free YouTube Downloader*
-EOF
-                sed -i "s|NAME_NOEXT_PLACEHOLDER|${name_noext}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|QUALITY_PLACEHOLDER|${QUALITY}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|SIZE_MB_PLACEHOLDER|${size_mb}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|FILENAME_PLACEHOLDER|${filename}|g" "$BACKUP_DIR/$folder/README.md"
-                sed -i "s|LINK_PLACEHOLDER|${link}|g" "$BACKUP_DIR/$folder/README.md"
-                if [ -n "$ZIP_PASSWORD" ]; then
-                  sed -i "s|PASSWORD_STATUS|YES|g" "$BACKUP_DIR/$folder/README.md"
-                else
-                  sed -i "s|PASSWORD_STATUS|NO|g" "$BACKUP_DIR/$folder/README.md"
-                fi
-                if [ -f "$BACKUP_DIR/$folder/thumbnail.jpg" ]; then
-                  sed -i "s|THUMB_PLACEHOLDER|<div align=\"center\"><img src=\"thumbnail.jpg\" width=\"250\"/></div><br>|g" "$BACKUP_DIR/$folder/README.md"
-                else
-                  sed -i "s|THUMB_PLACEHOLDER||g" "$BACKUP_DIR/$folder/README.md"
-                fi
-              fi
-            done
-            rm -rf "$tmp_dir"
-          done
-
-          echo "$BACKUP_DIR" > /tmp/backup_path.txt
-          echo "$REPO_OWNER" > /tmp/repo_owner.txt
-          echo "$REPO_NAME" > /tmp/repo_name.txt
-          echo "$BRANCH" > /tmp/branch.txt
-
-      - name: Download subtitles (if requested)
-        if: ${{ github.event.inputs.download_subtitles == 'true' }}
-        run: |
-          BACKUP_DIR=$(cat /tmp/backup_path.txt)
-          REPO_OWNER=$(cat /tmp/repo_owner.txt)
-          REPO_NAME=$(cat /tmp/repo_name.txt)
-          BRANCH=$(cat /tmp/branch.txt)
-
-          while IFS='|' read -r name folder; do
-            [ -z "$folder" ] && continue
-            sub_dir="$BACKUP_DIR/$folder/subtitle"
-            mkdir -p "$sub_dir"
-            # Try to get the original URL (we don't store it, so re-fetch from video info? not needed; just use generic yt-dlp with the video title)
-            # Instead, we can use the folder name as search? Simpler: re-download using best guess. But we'll assume we have the video URL from earlier? Not stored.
-            # For simplicity, we'll skip actual subtitle download here because the original URLs are not persisted.
-            # In a full implementation you would store the video URL alongside. But for now, we just create an empty placeholder.
-            echo "Subtitles not re-downloaded in this simplified step." > "$sub_dir/readme.txt"
-            # Clean up
-            rm -rf "$sub_dir"
-          done < /tmp/video_info.txt
-          echo "Subtitle step completed (stub)."
-
-      - name: Stop WARP container
-        if: always()
-        run: |
-          docker stop warp || true
-          docker rm warp || true
-
-      - name: Push videos to repository
-        run: |
-          BACKUP_DIR=$(cat /tmp/backup_path.txt)
-          REPO_OWNER=$(cat /tmp/repo_owner.txt)
-          REPO_NAME=$(cat /tmp/repo_name.txt)
-          BRANCH=$(cat /tmp/branch.txt)
-
-          if [ -z "$(find "$BACKUP_DIR" -type f 2>/dev/null)" ]; then
-            echo "No files downloaded. Exiting."
-            exit 0
+          # Set format based on quality
+          if [ "$QUALITY" = "audio" ]; then
+            FORMAT="bestaudio/best"
+          elif [ "$QUALITY" = "best" ]; then
+            FORMAT="bestvideo+bestaudio/best"
+          else
+            FORMAT="bestvideo[height<="${QUALITY}"]+bestaudio/best"
           fi
 
-          git fetch origin "$BRANCH"
-          git reset --hard origin/"$BRANCH"
+          # Create videos directory
           mkdir -p videos
-          cp -r "$BACKUP_DIR"/* videos/
 
-          # Generate master README
-          master_readme="videos/README.md"
-          {
-            echo "# RavenTube - Downloaded Videos"
-            echo ""
-            echo "| # | Video |"
-            echo "|---|-------|"
-            num=0
-            for folder in videos/*/; do
-              [ -d "$folder" ] || continue
-              name=$(basename "$folder")
-              num=$((num+1))
-              enc=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$name'))")
-              echo "| $num | [$name](https://github.com/${REPO_OWNER}/${REPO_NAME}/tree/${BRANCH}/videos/${enc}) |"
-            done
-          } > "$master_readme"
+          # Process each URL
+          for URL in $URLS; do
+            echo "Processing: $URL"
 
-          git add -f videos/
-          git diff --cached --quiet || git commit -m 'RavenTube: downloaded videos [skip ci]'
-
-          for i in $(seq 1 10); do
-            if git push origin HEAD:"$BRANCH"; then
-              echo "✅ Push successful"
-              break
-            else
-              echo "Push failed, retry $i/10..."
-              sleep 5
-              git fetch origin "$BRANCH"
-              git reset --hard origin/"$BRANCH"
-              cp -r "$BACKUP_DIR"/* videos/
-              git add -f videos/
-              regenerate_master_readme
-              git diff --cached --quiet || git commit -m 'RavenTube: downloaded videos [skip ci]' --allow-empty
+            # Handle search queries
+            if [[ ! "$URL" =~ ^https?:// ]]; then
+              URL="ytsearch1:$URL"
             fi
+
+            # Download with retries
+            for i in 1 2 3; do
+              if yt-dlp -f "$FORMAT" \
+                --merge-output-format mp4 \
+                --write-thumbnail \
+                --convert-thumbnails jpg \
+                --output "videos/%(title)s.%(ext)s" \
+                --no-playlist \
+                --retries 5 \
+                "$URL"; then
+                break
+              fi
+              sleep 5
+            done
           done
 
-          echo "RavenTube completed successfully."
+          # Handle password protection
+          if [ -n "$PASSWORD" ]; then
+            for file in videos/*.mp4 videos/*.webm; do
+              [ -f "$file" ] || continue
+              zip -P "$PASSWORD" "${file}.zip" "$file"
+              rm "$file"
+            done
+          fi
+
+      - name: Push to repository
+        run: |
+          git add videos/
+          git diff --cached --quiet || git commit -m "RavenTube: add videos [skip ci]"
+          git push

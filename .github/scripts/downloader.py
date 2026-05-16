@@ -13,7 +13,7 @@ password = settings.get("password", "")
 
 urls = data.get("videos", [])
 if not urls:
-    print("No videos in JSON. Exiting.")
+    print("No videos in JSON. Exiting.", flush=True)
     sys.exit(0)
 
 if mp3 or quality == "audio":
@@ -40,8 +40,13 @@ branch = os.environ["GITHUB_REF_NAME"]
 Path("videos").mkdir(exist_ok=True)
 info_lines = []
 
+cookies_flag = []
+if os.path.exists("cookies.txt"):
+    cookies_flag = ["--cookies", "cookies.txt"]
+    print("Using cookies.txt for authentication", flush=True)
+
 for idx, url in enumerate(urls, 1):
-    print(f"\n===== [{idx}/{len(urls)}] {url} =====")
+    print(f"\n===== [{idx}/{len(urls)}] {url} =====", flush=True)
     tmp = f"tmp_{idx}"
     os.makedirs(tmp, exist_ok=True)
 
@@ -53,8 +58,10 @@ for idx, url in enumerate(urls, 1):
         "--no-check-certificates",
         "--no-cache-dir",
         "--js-runtimes", "deno",
-        "--output", f"{tmp}/%(title)s.%(ext)s"
-    ]
+        "--remote-components", "ejs:github",   # fix JS challenges
+        "--output", "%(title)s.%(ext)s"        # no tmp prefix, cwd=tmp handles location
+    ] + cookies_flag
+
     if is_audio:
         base_cmd += ["--extract-audio", "--audio-format", "mp3", "--audio-quality", "0"]
     else:
@@ -78,14 +85,14 @@ for idx, url in enumerate(urls, 1):
     success = False
     for method in methods:
         cmd = base_cmd + method + [url]
-        print("Trying:", " ".join(method) if method else "no extra args")
+        print("Trying:", " ".join(method) if method else "no extra args", flush=True)
         if subprocess.run(cmd, cwd=tmp).returncode == 0:
             success = True
             break
         time.sleep(3)
 
     if not success:
-        print(f"FAILED: {url}")
+        print(f"FAILED: {url}", flush=True)
         shutil.rmtree(tmp)
         continue
 
@@ -98,7 +105,7 @@ for idx, url in enumerate(urls, 1):
             media_file = os.path.join(tmp, f)
             break
     if not media_file:
-        print("No media file found.")
+        print("No media file found.", flush=True)
         shutil.rmtree(tmp)
         continue
 
@@ -174,5 +181,5 @@ with open(master, "w") as mf:
 
 with open("urls.txt", "w") as uf:
     uf.write("\n".join(urls))
-
-print("\nDone. All files prepared.")
+)
+print("\nDone. All files prepared.", flush=True)

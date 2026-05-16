@@ -60,22 +60,16 @@ jobs:
             this_month) FILTERS=":month" ;;
             this_year)  FILTERS=":year" ;;
           esac
-
           SORT_FLAG=""
           if [ "$SORT" != "relevance" ]; then
             SORT_FLAG=":sort=$SORT"
           fi
-
           SEARCH_STR="ytsearch${MAX}:${QUERY}${FILTERS}${SORT_FLAG}"
           echo "Search string: $SEARCH_STR"
+          yt-dlp --dump-json --no-playlist --skip-download --no-warnings --no-check-certificate "$SEARCH_STR" > raw.json
 
-          # Fetch JSON metadata
-          yt-dlp --dump-json --no-playlist --skip-download \
-            --no-warnings --no-check-certificate \
-            "$SEARCH_STR" > raw.json
-
-          # Run Python to build HTML (no f-string braces in YAML)
-          python3 - <<'PYEOF'
+          # Write Python builder script to file to avoid YAML issues
+          cat > build_html.py << 'PYEOF'
 import json, datetime, html, os, sys
 
 search_query = os.environ.get("QUERY", "")
@@ -126,7 +120,6 @@ with open("raw.json", "r", encoding="utf-8") as f:
         views_fmt = fmt_num(view_count)
         likes_fmt = fmt_num(like_count)
 
-        # Duration
         try:
             d = int(duration)
             mins = d // 60
@@ -135,14 +128,13 @@ with open("raw.json", "r", encoding="utf-8") as f:
         except:
             duration_fmt = "?"
 
-        # Safe HTML
         title_esc = html.escape(title)
         channel_esc = html.escape(channel)
         url_esc = html.escape(webpage_url)
         thumb_esc = html.escape(thumbnail)
 
         card = '        <div class="video-card">\n'
-        card += '            <img class="thumbnail" src="' + thumb_esc + '" alt="Thumbnail" onerror="this.src=\'https://via.placeholder.com/320x180?text=No+Thumb\'">\n'
+        card += '            <img class="thumbnail" src="' + thumb_esc + '" alt="Thumbnail" onerror="this.src=\\\'https://via.placeholder.com/320x180?text=No+Thumb\\\'">\n'
         card += '            <div class="info">\n'
         card += '                <a href="' + url_esc + '" target="_blank" class="title">' + title_esc + '</a>\n'
         card += '                <div class="channel">📺 ' + channel_esc + '</div>\n'
@@ -159,7 +151,6 @@ with open("raw.json", "r", encoding="utf-8") as f:
 
 total = len(cards)
 
-# HTML template without curly braces in Python code
 html_head = '''<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
@@ -294,7 +285,6 @@ with open("search_results.html", "w", encoding="utf-8") as f:
     f.write("\n".join(cards))
     f.write(html_tail)
 
-# Extract URLs
 with open("selected_urls.txt", "w") as f:
     import re
     for card in cards:
@@ -304,6 +294,8 @@ with open("selected_urls.txt", "w") as f:
 
 print("Generated HTML with " + str(total) + " videos")
 PYEOF
+
+          python3 build_html.py
 
       - name: Save to repository
         run: |
@@ -323,4 +315,4 @@ PYEOF
           echo "=========================================="
           echo "🎉 Search complete!"
           echo "📄 HTML report: https://github.com/${{ github.repository }}/blob/main/index.html"
-          echo "==========================================".
+          echo "=========================================="

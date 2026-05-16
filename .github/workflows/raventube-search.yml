@@ -46,42 +46,51 @@ jobs:
           pip install yt-dlp
 
       - name: Perform search and generate HTML
+        env:
+          QUERY: ${{ github.event.inputs.search_query }}
+          MAX: ${{ github.event.inputs.max_results }}
+          SORT: ${{ github.event.inputs.sort_by }}
+          TIME: ${{ github.event.inputs.publish_time }}
         run: |
-          QUERY="${{ github.event.inputs.search_query }}"
-          MAX="${{ github.event.inputs.max_results }}"
-          SORT="${{ github.event.inputs.sort_by }}"
-          TIME="${{ github.event.inputs.publish_time }}"
-
-          # Build yt-dlp search string with sort and date filters
+          # Build search string
           FILTERS=""
-          if [ "$TIME" != "any" ]; then
-            case "$TIME" in
-              today)       FILTERS=":today" ;;
-              this_week)   FILTERS=":week" ;;
-              this_month)  FILTERS=":month" ;;
-              this_year)   FILTERS=":year" ;;
-            esac
-          fi
+          case "$TIME" in
+            today)      FILTERS=":today" ;;
+            this_week)  FILTERS=":week" ;;
+            this_month) FILTERS=":month" ;;
+            this_year)  FILTERS=":year" ;;
+          esac
+
           SORT_FLAG=""
           if [ "$SORT" != "relevance" ]; then
             SORT_FLAG=":sort=$SORT"
           fi
 
           SEARCH_STR="ytsearch${MAX}:${QUERY}${FILTERS}${SORT_FLAG}"
-
           echo "Search string: $SEARCH_STR"
 
-          # Fetch JSON metadata (richer than flat-playlist)
+          # Fetch JSON metadata
           yt-dlp --dump-json --no-playlist --skip-download \
             --no-warnings --no-check-certificate \
             "$SEARCH_STR" > raw.json
 
-          # Generate HTML with Python (safe escaping)
-          python3 << 'PYEOF'
+          # Run Python to build HTML (no f-string braces in YAML)
+          python3 - <<'PYEOF'
 import json, datetime, html, os, sys
 
 search_query = os.environ.get("QUERY", "")
 generated_at = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+def fmt_num(n):
+    try:
+        n = int(n)
+    except:
+        return "0"
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n/1_000:.1f}K"
+    return str(n)
 
 cards = []
 with open("raw.json", "r", encoding="utf-8") as f:
@@ -103,80 +112,70 @@ with open("raw.json", "r", encoding="utf-8") as f:
         thumbnail = vid.get("thumbnail", "")
         webpage_url = vid.get("webpage_url", "")
         if not webpage_url and vid_id:
-            webpage_url = f"https://www.youtube.com/watch?v={vid_id}"
+            webpage_url = "https://www.youtube.com/watch?v=" + vid_id
 
         # Format date
         try:
             if len(upload_date) == 8:
-                date_fmt = f"{upload_date[:4]}-{upload_date[4:6]}-{upload_date[6:8]}"
+                date_fmt = upload_date[:4] + "-" + upload_date[4:6] + "-" + upload_date[6:8]
             else:
                 date_fmt = upload_date
         except:
             date_fmt = "N/A"
 
-        # Format numbers
-        def fmt_num(n):
-            try:
-                n = int(n)
-            except:
-                return "0"
-            if n >= 1_000_000:
-                return f"{n/1_000_000:.1f}M"
-            if n >= 1_000:
-                return f"{n/1_000:.1f}K"
-            return str(n)
-
         views_fmt = fmt_num(view_count)
         likes_fmt = fmt_num(like_count)
 
-        # Format duration
+        # Duration
         try:
             d = int(duration)
             mins = d // 60
             secs = d % 60
-            duration_fmt = f"{mins}:{secs:02d}"
+            duration_fmt = str(mins) + ":" + str(secs).zfill(2)
         except:
             duration_fmt = "?"
 
-        # Escape for HTML
+        # Safe HTML
         title_esc = html.escape(title)
         channel_esc = html.escape(channel)
         url_esc = html.escape(webpage_url)
+        thumb_esc = html.escape(thumbnail)
 
-        card = f'''        <div class="video-card">
-            <img class="thumbnail" src="{html.escape(thumbnail)}" alt="Thumbnail" onerror="this.src='https://via.placeholder.com/320x180?text=No+Thumb'">
-            <div class="info">
-                <a href="{url_esc}" target="_blank" class="title">{title_esc}</a>
-                <div class="channel">📺 {channel_esc}</div>
-                <div class="stats">
-                    <span class="stat duration">⏱️ {duration_fmt}</span>
-                    <span class="stat views">👁️ {views_fmt}</span>
-                    <span class="stat likes">❤️ {likes_fmt}</span>
-                    <span class="stat date">📅 {date_fmt}</span>
-                </div>
-                <a href="{url_esc}" target="_blank" class="download-btn">▶️ Watch on YouTube</a>
-            </div>
-        </div>'''
+        card = '        <div class="video-card">\n'
+        card += '            <img class="thumbnail" src="' + thumb_esc + '" alt="Thumbnail" onerror="this.src=\'https://via.placeholder.com/320x180?text=No+Thumb\'">\n'
+        card += '            <div class="info">\n'
+        card += '                <a href="' + url_esc + '" target="_blank" class="title">' + title_esc + '</a>\n'
+        card += '                <div class="channel">📺 ' + channel_esc + '</div>\n'
+        card += '                <div class="stats">\n'
+        card += '                    <span class="stat duration">⏱️ ' + duration_fmt + '</span>\n'
+        card += '                    <span class="stat views">👁️ ' + views_fmt + '</span>\n'
+        card += '                    <span class="stat likes">❤️ ' + likes_fmt + '</span>\n'
+        card += '                    <span class="stat date">📅 ' + date_fmt + '</span>\n'
+        card += '                </div>\n'
+        card += '                <a href="' + url_esc + '" target="_blank" class="download-btn">▶️ Watch on YouTube</a>\n'
+        card += '            </div>\n'
+        card += '        </div>'
         cards.append(card)
 
 total = len(cards)
 
-html_template = f'''<!DOCTYPE html>
+# HTML template without curly braces in Python code
+html_head = '''<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RavenTube Search Results</title>
     <style>
-        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-        body {{
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
             color: #eee;
             padding: 20px;
-        }}
-        .container {{ max-width: 1400px; margin: 0 auto; }}
-        h1 {{
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        h1 {
             text-align: center;
             margin-bottom: 10px;
             font-size: 2.5rem;
@@ -184,68 +183,68 @@ html_template = f'''<!DOCTYPE html>
             -webkit-background-clip: text;
             background-clip: text;
             color: transparent;
-        }}
-        .query-badge {{
+        }
+        .query-badge {
             text-align: center;
             margin-bottom: 30px;
             font-size: 1.2rem;
             color: #aaa;
-        }}
-        .video-grid {{
+        }
+        .video-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
             gap: 25px;
-        }}
-        .video-card {{
+        }
+        .video-card {
             background: rgba(255,255,255,0.08);
             backdrop-filter: blur(10px);
             border-radius: 15px;
             overflow: hidden;
             transition: transform 0.3s, box-shadow 0.3s;
             border: 1px solid rgba(255,255,255,0.1);
-        }}
-        .video-card:hover {{
+        }
+        .video-card:hover {
             transform: translateY(-8px);
             box-shadow: 0 15px 30px rgba(0,0,0,0.4);
             border-color: #4ecdc4;
-        }}
-        .thumbnail {{
+        }
+        .thumbnail {
             width: 100%;
             height: 180px;
             object-fit: cover;
             background: #0a0a1a;
-        }}
-        .info {{
+        }
+        .info {
             padding: 15px;
-        }}
-        .title {{
+        }
+        .title {
             font-size: 1.1rem;
             font-weight: bold;
             margin-bottom: 8px;
             color: #4ecdc4;
             text-decoration: none;
             display: block;
-        }}
-        .title:hover {{ text-decoration: underline; }}
-        .channel {{
+        }
+        .title:hover { text-decoration: underline; }
+        .channel {
             color: #ff6b6b;
             font-size: 0.85rem;
             margin-bottom: 8px;
-        }}
-        .stats {{
+        }
+        .stats {
             display: flex;
             flex-wrap: wrap;
             gap: 12px;
             font-size: 0.75rem;
             color: #ccc;
             margin: 10px 0;
-        }}
-        .stat {{ background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 20px; }}
-        .duration {{ background: rgba(78,205,196,0.2); }}
-        .views {{ background: rgba(255,107,107,0.2); }}
-        .likes {{ background: rgba(78,205,196,0.2); }}
-        .date {{ background: rgba(255,193,7,0.2); }}
-        .download-btn {{
+        }
+        .stat { background: rgba(0,0,0,0.4); padding: 3px 8px; border-radius: 20px; }
+        .duration { background: rgba(78,205,196,0.2); }
+        .views { background: rgba(255,107,107,0.2); }
+        .likes { background: rgba(78,205,196,0.2); }
+        .date { background: rgba(255,193,7,0.2); }
+        .download-btn {
             display: inline-block;
             background: linear-gradient(45deg, #ff6b6b, #c92a2a);
             color: white;
@@ -255,32 +254,32 @@ html_template = f'''<!DOCTYPE html>
             font-size: 0.8rem;
             margin-top: 10px;
             transition: opacity 0.2s;
-        }}
-        .download-btn:hover {{ opacity: 0.8; }}
-        .footer {{
+        }
+        .download-btn:hover { opacity: 0.8; }
+        .footer {
             text-align: center;
             margin-top: 40px;
             padding: 20px;
             color: #666;
             font-size: 0.8rem;
-        }}
-        @media (max-width: 700px) {{
-            .video-grid {{ grid-template-columns: 1fr; }}
-        }}
+        }
+        @media (max-width: 700px) {
+            .video-grid { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
 <div class="container">
     <h1>🪶 RavenTube Search Results</h1>
     <div class="query-badge">
-        🔍 <strong>{html.escape(search_query)}</strong> &nbsp;|&nbsp;
-        📅 {generated_at} &nbsp;|&nbsp;
-        🎯 {total} videos
+        🔍 <strong>''' + html.escape(search_query) + '''</strong> &nbsp;|&nbsp;
+        📅 ''' + generated_at + ''' &nbsp;|&nbsp;
+        🎯 ''' + str(total) + ''' videos
     </div>
     <div class="video-grid">
 '''
 
-html_template += '\n'.join(cards) + '''
+html_tail = '''
     </div>
     <div class="footer">
         🐦‍⬛ RavenTube — Free YouTube Search & Download<br>
@@ -291,18 +290,19 @@ html_template += '\n'.join(cards) + '''
 </html>'''
 
 with open("search_results.html", "w", encoding="utf-8") as f:
-    f.write(html_template)
+    f.write(html_head)
+    f.write("\n".join(cards))
+    f.write(html_tail)
 
-# Extract clean URLs
+# Extract URLs
 with open("selected_urls.txt", "w") as f:
-    for card_line in cards:
-        # crude extraction: get the first href from each card
-        import re
-        match = re.search(r'href="([^"]+)"', card_line)
+    import re
+    for card in cards:
+        match = re.search(r'href="([^"]+)"', card)
         if match:
             f.write(match.group(1) + "\n")
 
-print(f"Generated HTML with {total} videos")
+print("Generated HTML with " + str(total) + " videos")
 PYEOF
 
       - name: Save to repository
@@ -323,4 +323,4 @@ PYEOF
           echo "=========================================="
           echo "🎉 Search complete!"
           echo "📄 HTML report: https://github.com/${{ github.repository }}/blob/main/index.html"
-          echo "=========================================="m
+          echo "==========================================".

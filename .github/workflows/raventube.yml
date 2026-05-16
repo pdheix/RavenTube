@@ -1,0 +1,344 @@
+name: RavenTube - Free YouTube Downloader
+
+on:
+  workflow_dispatch:
+    inputs:
+      video_urls:
+        description: 'YouTube URLs or search phrases (space-separated)'
+        required: true
+        type: string
+      quality:
+        description: 'Video quality'
+        required: false
+        type: choice
+        default: 'best'
+        options:
+          - best
+          - '2160'
+          - '1440'
+          - '1080'
+          - '720'
+          - '480'
+          - audio
+      download_subtitles:
+        description: 'Download subtitles (Persian + English)'
+        required: false
+        type: boolean
+        default: false
+      password:
+        description: 'ZIP encryption password (leave empty for none)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: write
+
+    steps:
+      - name: Validate input
+        run: |
+          if [ -z "${{ github.event.inputs.video_urls }}" ]; then
+            echo "ERROR: No video URLs provided, My Creator."
+            exit 1
+          fi
+          echo "INPUT_URLS=${{ github.event.inputs.video_urls }}" >> $GITHUB_ENV
+          echo "QUALITY=${{ github.event.inputs.quality }}" >> $GITHUB_ENV
+          echo "ZIP_PASSWORD=${{ github.event.inputs.password }}" >> $GITHUB_ENV
+          echo "DOWNLOAD_SUBS=${{ github.event.inputs.download_subtitles }}" >> $GITHUB_ENV
+          echo "REPO_OWNER=${{ github.repository_owner }}" >> $GITHUB_ENV
+          echo "REPO_NAME=${{ github.event.repository.name }}" >> $GITHUB_ENV
+          echo "BRANCH=${{ github.ref_name }}" >> $GITHUB_ENV
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "RavenTube"
+          git config user.email "raventube@local"
+
+      - name: Start WARP proxy (bypass geo-restrictions)
+        run: |
+          docker run -d --name warp -p 1080:1080 caomingjun/warp || echo "WARP start attempted"
+          sleep 15
+          echo "WARP proxy ready"
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y python3-pip ffmpeg zip p7zip-full curl jq bc unzip
+          pip install yt-dlp
+          curl -fsSL https://deno.land/install.sh | sh
+          echo "$HOME/.deno/bin" >> $GITHUB_PATH
+
+      - name: Parse inputs and download
+        run: |
+          mkdir -p tmp_downloads videos
+
+          # Determine format selection
+          case "$QUALITY" in
+            "audio") FORMAT="bestaudio/bestaudio*/best" ;;
+            "best")  FORMAT="bestvideo+bestaudio/best" ;;
+            "2160")  FORMAT="bestvideo[height<=2160]+bestaudio/bestvideo[height<=2160]+bestaudio" ;;
+            "1440")  FORMAT="bestvideo[height<=1440]+bestaudio/bestvideo[height<=1440]+bestaudio" ;;
+            "1080")  FORMAT="bestvideo[height<=1080]+bestaudio/bestvideo[height<=1080]+bestaudio" ;;
+            "720")   FORMAT="bestvideo[height<=720]+bestaudio/bestvideo[height<=720]+bestaudio" ;;
+            "480")   FORMAT="bestvideo[height<=480]+bestaudio/bestvideo[height<=480]+bestaudio" ;;
+          esac
+
+          COMMON_FLAGS="--merge-output-format mp4 --write-thumbnail --convert-thumbnails jpg --no-playlist --retries 5 --fragment-retries 5 --concurrent-fragments 8 --no-check-certificates --format $FORMAT"
+
+          # Process each URL/search term
+          for INPUT in $INPUT_URLS; do
+            echo "=== Processing: $INPUT ==="
+
+            # Convert search queries
+            URL="$INPUT"
+            if [[ ! "$INPUT" =~ ^https?:// ]]; then
+              URL="ytsearch1:$INPUT"
+              echo "Search mode: $URL"
+            fi
+
+            # Try 8 different methods
+            SUCCESS=0
+            for METHOD in 1 2 3 4 5 6 7 8; do
+              echo "--- Attempting method $METHOD ---"
+
+              PROXY_FLAG=""
+              CLIENT_FLAG=""
+
+              case $METHOD in
+                1) CLIENT_FLAG="--client web --js-runtimes deno --remote-components ejs:github"
+                   PROXY_FLAG="--proxy socks5://127.0.0.1:1080" ;;
+                2) CLIENT_FLAG="--client web --js-runtimes deno --remote-components ejs:npm"
+                   PROXY_FLAG="--proxy socks5://127.0.0.1:1080" ;;
+                3) CLIENT_FLAG="--client web,mweb,android_vr --js-runtimes deno"
+                   PROXY_FLAG="--proxy socks5://127.0.0.1:1080" ;;
+                4) CLIENT_FLAG="--client mweb"
+                   PROXY_FLAG="--proxy socks5://127.0.0.1:1080" ;;
+                5) CLIENT_FLAG="--client android_vr"
+                   PROXY_FLAG="--proxy socks5://127.0.0.1:1080" ;;
+                6) CLIENT_FLAG="--client web --js-runtimes deno"
+                   PROXY_FLAG="" ;;
+                7) CLIENT_FLAG="--client mweb"
+                   PROXY_FLAG="" ;;
+                8) CLIENT_FLAG="--client android"
+                   PROXY_FLAG="" ;;
+              esac
+
+              yt-dlp $COMMON_FLAGS $PROXY_FLAG $CLIENT_FLAG \
+                -o "tmp_downloads/%(title)s.%(ext)s" \
+                --write-info-json \
+                "$URL" && SUCCESS=1 && break
+
+              sleep 3
+            done
+
+            if [ $SUCCESS -eq 0 ]; then
+              echo "WARNING: Failed to download: $INPUT — continuing, by the All-Father's grace."
+            fi
+          done
+
+      - name: Process each downloaded file
+        run: |
+          SPLIT_MB=95
+          PASSWORD="$ZIP_PASSWORD"
+
+          sanitize_name() {
+            echo "$1" | sed 's/ /-/g' | sed 's/　/-/g' | tr -s '-' | tr -cd 'a-zA-Z0-9._-'
+          }
+
+          get_unique_folder() {
+            local base="$1"
+            if [ ! -d "videos/$base" ]; then
+              echo "$base"
+            else
+              echo "${base}_$(cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 6 | head -1)"
+            fi
+          }
+
+          for FILE in tmp_downloads/*.mp4; do
+            [ -e "$FILE" ] || continue
+
+            BASENAME=$(basename "$FILE" .mp4)
+            SAFE_NAME=$(sanitize_name "$BASENAME")
+            FOLDER=$(get_unique_folder "$SAFE_NAME")
+            SIZE=$(stat -c%s "$FILE" 2>/dev/null || echo 0)
+            SIZE_MB=$((SIZE / 1024 / 1024))
+
+            echo "Processing: $BASENAME ($SIZE_MB MB)"
+
+            mkdir -p "videos/$FOLDER"
+            TARGET="videos/$FOLDER/${SAFE_NAME}.mp4"
+
+            # Split large files
+            if [ "$SIZE" -gt $((SPLIT_MB * 1024 * 1024)) ]; then
+              echo "File exceeds ${SPLIT_MB}MB — splitting..."
+              cd "videos/$FOLDER"
+              if [ -n "$PASSWORD" ]; then
+                7z a -tzip -v${SPLIT_MB}m -p"$PASSWORD" -mx=0 "${SAFE_NAME}.zip" "../../tmp_downloads/${BASENAME}.mp4"
+              else
+                zip -0 -s ${SPLIT_MB}m "${SAFE_NAME}.zip" "../../tmp_downloads/${BASENAME}.mp4"
+              fi
+              cd ../../
+              SPLIT=1
+            else
+              cp "$FILE" "$TARGET"
+              SPLIT=0
+            fi
+
+            # Copy thumbnail
+            THUMB="tmp_downloads/${BASENAME}.jpg"
+            if [ -f "$THUMB" ]; then
+              cp "$THUMB" "videos/$FOLDER/thumbnail.jpg"
+            fi
+
+            # Generate README
+            REPO="https://raw.githubusercontent.com/$REPO_OWNER/$REPO_NAME/$BRANCH"
+            FOLDER_ENC=$(echo "$FOLDER" | sed 's/ /%20/g')
+
+            cat > "videos/$FOLDER/README.md" << READMEEOF
+# $BASENAME
+
+<div align="center">
+  <img src="thumbnail.jpg" width="250"/>
+</div>
+
+| Property | Value |
+|----------|-------|
+| **Quality** | $QUALITY |
+| **Size** | $SIZE_MB MB |
+| **Password** | $( [ -n "$PASSWORD" ] && echo "YES" || echo "NO" ) |
+
+## Download Link
+READMEEOF
+
+            if [ "$SPLIT" -eq 1 ]; then
+              PARTS=$(ls videos/$FOLDER/${SAFE_NAME}.zip* 2>/dev/null | wc -l)
+              echo "| **Total Size** | $SIZE_MB MB ($PARTS parts) |" >> "videos/$FOLDER/README.md"
+              echo "" >> "videos/$FOLDER/README.md"
+              echo "| # | File | Link |" >> "videos/$FOLDER/README.md"
+              echo "|---|------|------|" >> "videos/$FOLDER/README.md"
+
+              COUNT=1
+              for PART in videos/$FOLDER/${SAFE_NAME}.zip*; do
+                PARTNAME=$(basename "$PART")
+                PARTENC=$(echo "$PARTNAME" | sed 's/ /%20/g')
+                echo "| $COUNT | \`$PARTNAME\` | [Download]($REPO/videos/$FOLDER_ENC/$PARTENC) |" >> "videos/$FOLDER/README.md"
+                COUNT=$((COUNT + 1))
+              done
+
+              echo "" >> "videos/$FOLDER/README.md"
+              echo "## How to Extract" >> "videos/$FOLDER/README.md"
+              echo "" >> "videos/$FOLDER/README.md"
+              echo "Download all parts to the same folder, then open \`${SAFE_NAME}.zip\`." >> "videos/$FOLDER/README.md"
+              if [ -n "$PASSWORD" ]; then
+                echo "Password: \`[provided at download time]\`" >> "videos/$FOLDER/README.md"
+              fi
+            else
+              FILE_ENC=$(echo "${SAFE_NAME}.mp4" | sed 's/ /%20/g')
+              echo "| \`${SAFE_NAME}.mp4\` | [Download]($REPO/videos/$FOLDER_ENC/$FILE_ENC) |" >> "videos/$FOLDER/README.md"
+            fi
+
+            echo "" >> "videos/$FOLDER/README.md"
+            echo "---" >> "videos/$FOLDER/README.md"
+            echo "*RavenTube - Free YouTube Downloader*" >> "videos/$FOLDER/README.md"
+          done
+
+      - name: Download subtitles (if enabled)
+        if: github.event.inputs.download_subtitles == 'true'
+        run: |
+          for FILE in tmp_downloads/*.mp4; do
+            [ -e "$FILE" ] || continue
+            BASENAME=$(basename "$FILE" .mp4)
+            SAFE_NAME=$(sanitize_name "$BASENAME")
+            FOLDER=$(ls -d videos/${SAFE_NAME}* 2>/dev/null | head -1)
+            [ -z "$FOLDER" ] && continue
+
+            echo "Downloading subtitles for: $BASENAME"
+
+            SUB_DIR="tmp_subs_${SAFE_NAME}"
+            mkdir -p "$SUB_DIR"
+
+            # Get the original URL from info json or reconstruct
+            URL_ARG=$(cat tmp_downloads/"${BASENAME}".info.json 2>/dev/null | jq -r '.webpage_url // empty')
+            if [ -z "$URL_ARG" ]; then
+              URL_ARG=$(grep -o "Processing: $BASENAME" <<< "$INPUT_URLS" || echo "$BASENAME")
+            fi
+
+            # Attempt native + auto subs
+            for SUB_MODE in \
+              "--write-sub --sub-langs fa,en" \
+              "--write-auto-sub --sub-langs fa,en" \
+              "--write-auto-sub --sub-langs en" \
+              "--write-auto-sub --sub-langs fa"; do
+
+              yt-dlp --skip-download --sub-format "vtt/srt/best" --convert-subs vtt \
+                $SUB_MODE -o "$SUB_DIR/" "$URL_ARG" 2>/dev/null && break
+            done
+
+            # Zip subtitles
+            if [ -n "$(ls -A $SUB_DIR 2>/dev/null)" ]; then
+              cd "$SUB_DIR" && zip -j "../${FOLDER}/subtitle.zip" ./* 2>/dev/null; cd ../
+              echo "" >> "$FOLDER/README.md"
+              echo "## 📝 Subtitles" >> "$FOLDER/README.md"
+              echo "" >> "$FOLDER/README.md"
+              echo "| File | Link |" >> "$FOLDER/README.md"
+              echo "|------|------|" >> "$FOLDER/README.md"
+              echo "| \`subtitle.zip\` | [Download]($REPO/videos/$FOLDER/subtitle.zip) |" >> "$FOLDER/README.md"
+            fi
+
+            rm -rf "$SUB_DIR"
+          done
+
+      - name: Stop WARP
+        if: always()
+        run: |
+          docker stop warp 2>/dev/null && docker rm warp 2>/dev/null || true
+
+      - name: Generate master README
+        run: |
+          cat > "videos/README.md" << 'MASTEREOF'
+# RavenTube - Downloaded Videos
+
+| # | Video |
+|---|-------|
+MASTEREOF
+
+          INDEX=1
+          for VIDEO_DIR in videos/*/; do
+            [ "$VIDEO_DIR" = "videos/*/" ] && break
+            DIRNAME=$(basename "$VIDEO_DIR")
+            [ "$DIRNAME" = "README.md" ] && continue
+
+            # Get title from README if available
+            TITLE=$(head -1 "$VIDEO_DIR/README.md" 2>/dev/null | sed 's/^# //' || echo "$DIRNAME")
+            DIR_ENC=$(echo "$DIRNAME" | sed 's/ /%20/g')
+
+            echo "| $INDEX | [$TITLE](https://github.com/$REPO_OWNER/$REPO_NAME/tree/$BRANCH/videos/$DIR_ENC) |" >> videos/README.md
+            INDEX=$((INDEX + 1))
+          done
+
+          echo "" >> videos/README.md
+          echo "---" >> videos/README.md
+          echo "*RavenTube - Free YouTube Downloader*" >> videos/README.md
+
+      - name: Push to repository
+        run: |
+          cp -r tmp_downloads/*.mp4 videos/ 2>/dev/null || true
+
+          git add videos/
+          git commit -m "RavenTube: downloaded videos [skip ci]" || echo "No changes to commit"
+
+          # Push with retry logic
+          for i in $(seq 1 10); do
+            git pull --rebase && git push && break
+            echo "Push attempt $i failed — retrying in 5 seconds..."
+            sleep 5
+          done

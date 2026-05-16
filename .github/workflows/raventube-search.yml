@@ -1,0 +1,72 @@
+name: RavenTube - Search
+
+on:
+  workflow_dispatch:
+    inputs:
+      search_query:
+        description: 'Search phrase (e.g., "python tutorial" or "ytsearch10:music")'
+        required: true
+        type: string
+      max_results:
+        description: 'Maximum number of results'
+        required: false
+        default: '5'
+        type: choice
+        options: [1, 3, 5, 10, 20]
+
+jobs:
+  search:
+    name: Search YouTube
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install yt-dlp
+        run: pip install yt-dlp
+
+      - name: Perform search
+        run: |
+          SEARCH="${{ github.event.inputs.search_query }}"
+          MAX="${{ github.event.inputs.max_results }}"
+
+          # Ensure ytsearch format
+          if [[ ! "$SEARCH" =~ ^ytsearch[0-9]*: ]]; then
+            SEARCH="ytsearch${MAX}:${SEARCH}"
+          fi
+
+          # Get video IDs and titles
+          yt-dlp --flat-playlist --print "%(id)s|%(title)s" "$SEARCH" | head -"$MAX" > search_results.txt
+
+          echo "Found $(wc -l < search_results.txt) videos:"
+          cat search_results.txt
+
+          # Create URLs file
+          while IFS='|' read -r id title; do
+            echo "https://youtube.com/watch?v=$id" >> video_urls.txt
+          done < search_results.txt
+
+      - name: Save results
+        run: |
+          mkdir -p .raventube
+          cp video_urls.txt .raventube/latest_search.txt
+          echo "${{ github.event.inputs.search_query }}" > .raventube/last_query.txt
+          date -u > .raventube/search_timestamp.txt
+
+      - name: Commit search results
+        run: |
+          git config user.name "RavenTube-Search"
+          git config user.email "search@raventube"
+          git add .raventube/
+          git diff --cached --quiet || git commit -m "RavenTube: search results for '${{ github.event.inputs.search_query }}' [skip ci]"
+          git push
+
+      - name: Output URLs (for manual use)
+        run: |
+          echo "::set-output name=urls::$(cat video_urls.txt | tr '\n' ' ')"
+          echo "URLs saved to .raventube/latest_search.txt"

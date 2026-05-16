@@ -34,7 +34,7 @@ jobs:
           curl -fsSL https://deno.land/install.sh | sh
           echo "$HOME/.deno/bin" >> $GITHUB_PATH
 
-      - name: Start WARP proxy (optional but recommended)
+      - name: Start WARP proxy
         run: |
           docker network create warp-net || true
           docker run -d --name warp --restart=always --network warp-net \
@@ -44,13 +44,13 @@ jobs:
             -v warp-data:/var/lib/cloudflare-warp \
             caomingjun/warp
           sleep 15
-          # Quick test
+          # Verify
           curl -s --max-time 5 --socks5-hostname 127.0.0.1:1080 https://cloudflare.com/cdn-cgi/trace || true
 
       - name: Download videos from JSON
-        run: python3 .github/scripts/downloader.py
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 .github/scripts/downloader.py
 
       - name: Stop WARP container
         if: always()
@@ -62,7 +62,7 @@ jobs:
           git config user.email "raventube@users.noreply.github.com"
           git add videos/ videos/README.md urls.txt
           if git diff --cached --quiet; then
-            echo "No changes."
+            echo "No changes to commit."
           else
             git commit -m "Downloaded from JSON [skip ci]"
             for i in $(seq 1 10); do

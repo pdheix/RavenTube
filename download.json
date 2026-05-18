@@ -1,22 +1,16 @@
 {
   "settings": {
-    "quality": "480",
+    "quality": "audio",
     "subtitles": false,
-    "mp3": false,
+    "mp3": true,
     "password": ""
   },
   "videos": [
-    "https://youtu.be/Cs7QiSi8KLY?si=29DpDP9vjJ3I4n-0",
-    "https://youtu.be/63Kr3HFECHM?si=xee17MoE_qBVSCDr",
-    "https://youtu.be/Yh5gcLG6C3Q?si=Ulh3bHqW7Fq86IF7",
-    "https://youtu.be/DB5mk6bQt9A?si=C4nPyUkxt-RMrzGh",
-    "https://youtu.be/PByDzuOrkek?si=DDN9s7Jh1xkwMqx1",
-    "https://youtu.be/niIcPhU1OoI?si=URII_5TDTU817b9Z",
-    "https://youtu.be/NlcIEmYfTmc?si=31zqWJGhTjoQXjKf",
-    "https://youtu.be/VHaGweIdAF0?si=eHSNH2eR0N_IhXYw",
-    "https://youtu.be/OYspXXQbPko?si=DRC4atRrBoOcZvmk",
-    "https://youtu.be/kC4hErBshbc?si=dplSmulOP2mILnad",
-    "https://youtu.be/Y4WcEucZ3wU?si=Up8Qx2xX_ypu_rC_",
-    "https://youtu.be/4hBFRV12-Is?si=7c-oXmlqovMsKMty"
+    "https://youtu.be/Zts_pjiW62g?si=maHT0VgeRt1kkIBb",
+    "https://youtu.be/pBkHHoOIIn8?si=wodDbvU5q-sKnqbR",
+    "https://youtu.be/41s0oORIjp4?si=XZBa4VXGNftxLp-C",
+    "https://youtu.be/ga7hGR_74DQ?si=Z6GDZivvqnYGrplX",
+    "https://youtu.be/ponTbDDMYjw?si=zFnj78VJ4oEgwWEM",
+    "https://youtu.be/80k3Ux5WGmU?si=YuLCfXjXZgwFLUPq"
   ]
 }

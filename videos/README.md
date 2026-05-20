@@ -2,12 +2,9 @@
 
 | # | Video | Folder |
 |---|---|---|
-| 1 | Every Weapon Ever Built by Iran Military Industry — The Complete Arsenal | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Every-Weapon-Ever-Built-by-Iran-Military-Industry--The-Complete-Arsenal_1779292070_4032) |
-| 2 | The HELL of Soviet SVD Dragunov | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/The-HELL-of-Soviet-SVD-Dragunov_1779292080_4032) |
-| 3 | US LUCAS vs Iran Shahed Drone ｜ Explained in Detail | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/US-LUCAS-vs-Iran-Shahed-Drone--Explained-in-Detail_1779292095_4032) |
-| 4 | Every Nuclear Weapon Type Explained | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Every-Nuclear-Weapon-Type-Explained_1779292105_4032) |
-| 5 | Every Type of Antenna Explained | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Every-Type-of-Antenna-Explained_1779292115_4032) |
-| 6 | Every Group Pushing Societal Collapse Explained in 15 Minutes | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Every-Group-Pushing-Societal-Collapse-Explained-in-15-Minutes_1779292127_4032) |
-| 7 | Every Type of Modern Combat Drone Explained | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Every-Type-of-Modern-Combat-Drone-Explained_1779292137_4032) |
-| 8 | A-10's Ruthless Hunt in the Strait of Hormuz？ | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/A-10s-Ruthless-Hunt-in-the-Strait-of-Hormuz_1779292147_4032) |
-| 9 | How an F-35 Got Hit by Iranian Missile in Operation Epic Fury | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/How-an-F-35-Got-Hit-by-Iranian-Missile-in-Operation-Epic-Fury_1779292162_4032) |
+| 1 | CIA’s TERRIFYING ＂Ghost Murmur＂ Weapon in Iran EXPLAINED | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/CIAs-TERRIFYING-Ghost-Murmur-Weapon-in-Iran-EXPLAINED_1779294416_4074) |
+| 2 | Review - Pragmata | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Review---Pragmata_1779294428_4074) |
+| 3 | Joe Rogan and Scott Horton REVEAL the Dark Truth About the Iran War | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Joe-Rogan-and-Scott-Horton-REVEAL-the-Dark-Truth-About-the-Iran-War_1779294440_4074) |
+| 4 | How the CIA Fooled Iran and Rescued the F-15 WSO | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/How-the-CIA-Fooled-Iran-and-Rescued-the-F-15-WSO_1779294458_4074) |
+| 5 | Cold War Relic Struck Modern Base ｜ Iran’s F-5 Evaded US Radar, Hit Kuwait Hub ｜ VERTEX | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/Cold-War-Relic-Struck-Modern-Base--Irans-F-5-Evaded-US-Radar-Hit-Kuwait-Hub--VERTEX_1779294476_4074) |
+| 6 | How Iranian Low-Cost drone SHAHED 136 works？ | [Open](https://github.com/muzaff-beep/RavenTube/tree/main/videos/How-Iranian-Low-Cost-drone-SHAHED-136-works_1779294488_4074) |
